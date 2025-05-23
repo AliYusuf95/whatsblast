@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <!-- Gradient definition -->
+    <defs>
+        <linearGradient id="redGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#ff3333"/>
+            <stop offset="100%" style="stop-color:#cc0000"/>
+        </linearGradient>
+    </defs>
+
+    <!-- Background circle -->
+    <circle cx="100" cy="100" r="90" 
+            fill="white" 
+            stroke="url(#redGradient)" 
+            stroke-width="4"/>
+
+    <!-- W letter (stylized) -->
+    <path d="M50 60 L65 130 L80 100 L100 130 L100 80" 
+          fill="none" 
+          stroke="url(#redGradient)" 
+          stroke-width="10" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"/>
+
+    <!-- B letter (stylized) -->
+    <path d="M115 80 L115 130 M115 80 C150 80 120 100 130 110 C150 120 155 130 120 130" 
+          fill="none" 
+          stroke="url(#redGradient)" 
+          stroke-width="10" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"/>
+</svg> 
