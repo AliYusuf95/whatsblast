@@ -3,6 +3,14 @@ name: Build and Push Docker Image
 on:
   push:
     branches: [main]
+    paths:
+      - "src/**"
+      - "Dockerfile"
+      - "package.json"
+      - "tsconfig.json"
+      - "bun.lock"
+      - "bun-env.d.ts"
+      - "bunfig.toml"
 
 env:
   REGISTRY: ghcr.io
