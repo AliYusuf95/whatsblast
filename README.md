@@ -2,11 +2,9 @@
 
 WhatsBlast is a powerful WhatsApp automation tool built with modern web technologies. It allows you to send bulk messages, and automate WhatsApp interactions through a user-friendly web interface.
 
-<div style="text-align: center;">
-
-![WhatsBlast Logo](src/logo.svg "WhatsBlast")
-
-</div>
+<p align="center">
+    <img src="src/logo.svg">
+</p>
 
 ## 🛠️ Tech Stack
 
