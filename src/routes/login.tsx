@@ -23,7 +23,12 @@ function Login() {
   const { data: qr, refetch } = useQuery(
     trpc.getQrCode.queryOptions(undefined, {
       enabled: !loggedIn,
-      refetchInterval: 10000,
+      refetchInterval: (query) => {
+        // If QR is not available, decrease interval to 2 seconds
+        if (!query.state.data) return 1000;
+        // Otherwise use normal 10 second interval
+        return 10000;
+      },
     })
   );
 

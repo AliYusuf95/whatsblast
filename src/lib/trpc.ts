@@ -5,7 +5,18 @@ import type { AppRouter } from "@/server";
 
 export const queryClient = new QueryClient();
 
-const API_URL = process.env.BUN_PUBLIC_API_URL || "http://localhost:3000";
+function getApiUrl() {
+  if (
+    typeof process === "object" &&
+    process.env &&
+    process.env.BUN_PUBLIC_API_URL
+  ) {
+    return process.env.BUN_PUBLIC_API_URL;
+  }
+  return window.location.origin;
+}
+
+const API_URL = getApiUrl();
 
 const trpcClient = createTRPCClient<AppRouter>({
   links: [httpBatchLink({ url: `${API_URL}/trpc` })],

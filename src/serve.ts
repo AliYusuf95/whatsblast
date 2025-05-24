@@ -5,6 +5,7 @@ import { whatsappService } from "@/server/whatsapp";
 
 const server = serve({
   hostname: "0.0.0.0", // Bind to all interfaces
+  idleTimeout: 50,
   routes: {
     // Serve index.html for all unmatched routes.
     "/*": index,
@@ -31,21 +32,24 @@ const server = serve({
 // Handle process signals
 process.on("SIGTERM", async () => {
   console.log("Received SIGTERM. Shutting down gracefully...");
+  await whatsappService.close();
   await server.stop();
-  await whatsappService.logout();
   process.exit(0);
 });
 
 process.on("SIGINT", async () => {
   console.log("Received SIGINT. Shutting down gracefully...");
+  await whatsappService.close();
   await server.stop();
-  await whatsappService.logout();
   process.exit(0);
 });
 
 console.log(`🚀 Server running at ${server.url}`);
-console.log("Server configuration:", {
-  hostname: server.hostname,
-  port: server.port,
-  development: process.env.NODE_ENV !== "production",
-});
+console.log(
+  "Server configuration:",
+  JSON.stringify({
+    hostname: server.hostname,
+    port: server.port,
+    development: process.env.NODE_ENV !== "production",
+  })
+);

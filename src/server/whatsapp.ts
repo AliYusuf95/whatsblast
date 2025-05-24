@@ -2,6 +2,7 @@ import { Client, LocalAuth } from "whatsapp-web.js";
 import qrcode from "qrcode";
 import { randomUUID } from "crypto";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
+import humanizeDuration from "humanize-duration";
 
 type BulkJob = {
   numbers: string[];
@@ -10,19 +11,35 @@ type BulkJob = {
   status: "PENDING" | "IN_PROGRESS" | "DONE";
 };
 
-class WhatsAppService {
-  client: Client;
-  isReady: boolean = false;
-  qr: string | null = null;
-  jobs: Map<string, BulkJob> = new Map();
-  loggedIn: boolean = false;
+const WHATSAPP_INACTIVITY_TIMEOUT = Number(
+  process.env.BUN_PUBLIC_WHATSAPP_INACTIVITY_TIMEOUT
+);
+
+class WhatsAppClientWrapper {
+  private client: Client | null = null;
+  private inactivityTimeout: NodeJS.Timeout | null = null;
+  private readonly INACTIVITY_TIMEOUT =
+    Number(WHATSAPP_INACTIVITY_TIMEOUT) || 30 * 60 * 1000; // 30 minutes default
+  private isReady: boolean = false;
+  private qr: string | null = null;
+  private loggedIn: boolean = false;
+  private eventHandlers: Map<string, (...args: any[]) => void> = new Map();
+  private isShuttingDown: boolean = false;
+  private isInitClient: boolean = false;
 
   constructor() {
-    this.initClient();
+    console.log(
+      `WhatsApp client inactivity timeout set to ${humanizeDuration(this.INACTIVITY_TIMEOUT)}`
+    );
   }
 
   private initClient() {
-    console.log("initClient");
+    console.time("WhatsAppClientWrapper#initClient");
+    console.time("WhatsApp client initilized");
+
+    if (this.isInitClient) return;
+    this.isInitClient = true;
+
     this.client = new Client({
       authStrategy: new LocalAuth(),
       puppeteer: {
@@ -32,53 +49,152 @@ class WhatsAppService {
       },
     });
 
-    this.client.on("qr", (qr) => {
-      this.qr = qr;
-      console.log("qr");
+    // Store event handlers for cleanup
+    const handlers = {
+      qr: (qr: string) => {
+        this.qr = qr;
+        console.timeEnd("WhatsApp client initilized");
+        console.log("WhatsAppClientWrapper#client.on(qr)");
+      },
+      ready: () => {
+        this.isReady = true;
+        this.qr = null;
+        console.timeEnd("WhatsApp client initilized");
+        console.log("WhatsAppClientWrapper#client.on(ready)");
+      },
+      authenticated: () => {
+        this.loggedIn = true;
+        this.qr = null;
+        console.log("WhatsAppClientWrapper#client.on(authenticated)");
+      },
+      auth_failure: () => {
+        this.loggedIn = false;
+        console.log("WhatsAppClientWrapper#client.on(auth_failure)");
+      },
+      disconnected: () => {
+        this.isReady = false;
+        this.loggedIn = false;
+        console.log("WhatsAppClientWrapper#client.on(disconnected)");
+      },
+      change_state: (state: string) => {
+        console.log(`WhatsAppClientWrapper#client.on(change_state,${state})`);
+      },
+    };
+
+    // Register event handlers
+    Object.entries(handlers).forEach(([event, handler]) => {
+      this.client!.on(event, handler);
+      this.eventHandlers.set(event, handler);
     });
 
-    this.client.on("ready", () => {
-      this.isReady = true;
-      this.qr = null;
-      console.log("ready");
-    });
-
-    this.client.on("authenticated", () => {
-      this.loggedIn = true;
-      this.qr = null;
-      console.log("authenticated");
-    });
-
-    this.client.on("auth_failure", () => {
-      this.loggedIn = false;
-      console.log("auth_failure");
-    });
-
-    this.client.on("disconnected", () => {
-      this.isReady = false;
-      this.loggedIn = false;
-      console.log("disconnected");
-    });
-
-    this.client.on("change_state", (state) => {
-      // Optionally, you can log or use this for more granularity
-      // console.log("Client state changed:", state);
-      console.log("change_state", state);
-    });
+    console.log("Client listeners", this.client.eventNames());
 
     this.client.initialize();
+    this.isInitClient = false;
+  }
+
+  private resetInactivityTimer() {
+    // Don't set new timeout if we're shutting down
+    if (this.isShuttingDown) return;
+
+    if (this.inactivityTimeout) {
+      // reschedules the timer
+      this.inactivityTimeout.refresh();
+    } else {
+      // Set new timeout
+      this.inactivityTimeout = setTimeout(() => {
+        console.log("Inactivity timeout reached, shutting down client...");
+        this.shutdown();
+      }, this.INACTIVITY_TIMEOUT);
+    }
+  }
+
+  private removeEventListeners() {
+    if (this.client) {
+      this.eventHandlers.forEach((handler, event) => {
+        this.client!.removeListener(event, handler);
+      });
+      this.eventHandlers.clear();
+    }
+  }
+
+  async shutdown() {
+    console.time("WhatsAppClientWrapper#shutdown");
+    if (this.isShuttingDown) return;
+    this.isShuttingDown = true;
+
+    try {
+      // Clear inactivity timeout
+      if (this.inactivityTimeout) {
+        this.inactivityTimeout.close();
+        clearTimeout(this.inactivityTimeout);
+        this.inactivityTimeout = null;
+      }
+
+      // Remove event listeners
+      this.removeEventListeners();
+
+      // Destroy client if it exists
+      if (this.client) {
+        await this.client.destroy();
+      }
+    } catch (error) {
+      console.error("Error during shutdown:", error);
+    } finally {
+      // Clear all references
+      this.isShuttingDown = false;
+      this.isReady = false;
+      this.qr = null;
+      this.client = null;
+      this.loggedIn = false;
+    }
+    console.timeEnd("WhatsAppClientWrapper#shutdown");
+  }
+
+  async destroy() {
+    console.log("WhatsAppClientWrapper#destroy");
+    await this.shutdown();
+  }
+
+  async getClient(): Promise<Client> {
+    if (!this.client) {
+      this.initClient();
+    }
+    this.resetInactivityTimer();
+    return this.client!;
+  }
+
+  getState() {
+    this.getClient();
+    return {
+      isReady: this.isReady,
+      qr: this.qr,
+      loggedIn: this.loggedIn,
+    };
+  }
+}
+
+class WhatsAppService {
+  jobs: Map<string, BulkJob> = new Map();
+  private wrapper: WhatsAppClientWrapper;
+
+  constructor() {
+    this.wrapper = new WhatsAppClientWrapper();
   }
 
   async getQrCodeImage() {
-    if (!this.qr) return null;
-    return await qrcode.toDataURL(this.qr);
+    const { qr } = this.wrapper.getState();
+    if (!qr) return null;
+    return await qrcode.toDataURL(qr);
   }
 
   isLoggedIn() {
-    return this.loggedIn && this.isReady;
+    const { loggedIn, isReady } = this.wrapper.getState();
+    return loggedIn && isReady;
   }
 
-  startBulkJob(numbers: string[], message: string) {
+  async startBulkJob(numbers: string[], message: string) {
+    const client = await this.wrapper.getClient();
     // Ensure numbers are unique and valid using libphonenumber-js
     const uniqueNumbers = Array.from(new Set(numbers));
     const validNumbers: string[] = [];
@@ -141,6 +257,7 @@ class WhatsAppService {
     job: BulkJob,
     validNumbers: string[]
   ) {
+    const client = await this.wrapper.getClient();
     job.status = "IN_PROGRESS";
     if (!this.isLoggedIn()) {
       for (const number of validNumbers) {
@@ -161,7 +278,7 @@ class WhatsAppService {
       await Promise.all(
         batch.map(async (number) => {
           try {
-            await this.client.sendMessage(number + "@c.us", job.message);
+            await client.sendMessage(number + "@c.us", job.message);
             job.results.push({ number, status: "SENT" });
           } catch (e) {
             job.results.push({ number, status: "FAILED", error: e.message });
@@ -180,18 +297,23 @@ class WhatsAppService {
   }
 
   async logout() {
-    await this.client.logout();
-    this.isReady = false;
-    this.loggedIn = false;
-    this.qr = null;
+    console.log("WhatsAppService#logout");
+    const client = await this.wrapper.getClient();
+    await client.logout();
+    await this.wrapper.destroy();
     this.jobs.clear();
-    this.initClient();
+  }
+
+  async close() {
+    await this.wrapper.destroy();
+    this.jobs.clear();
   }
 
   async getContactInfo() {
+    const client = await this.wrapper.getClient();
     if (!this.isLoggedIn()) return null;
     try {
-      const me = await this.client.info;
+      const me = await client.info;
       return {
         name: me.pushname || me.wid.user || "Unknown",
         number: me.wid.user,

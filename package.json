@@ -9,7 +9,7 @@
     "generate-routes": "bunx tsr generate",
     "watch-routes": "bunx tsr watch",
     "dev": "bun run watch-routes & bun --hot src/serve.ts",
-    "start": "NODE_ENV=production bun run generate-routes && bun src/serve.ts",
+    "start": "bun run generate-routes && NODE_ENV=production bun src/serve.ts",
     "build": "bun run generate-routes && bun run build.ts"
   },
   "dependencies": {
@@ -32,6 +32,7 @@
     "bun-plugin-tailwind": "^0.0.14",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "humanize-duration": "^3.32.2",
     "libphonenumber-js": "^1.12.8",
     "lucide-react": "^0.511.0",
     "next-themes": "^0.4.6",
