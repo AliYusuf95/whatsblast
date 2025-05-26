@@ -2,7 +2,7 @@ import { createBunHttpHandler } from "trpc-bun-adapter";
 import type { CreateBunContextOptions } from "trpc-bun-adapter";
 import { publicProcedure, router } from "./trpc";
 import { whatsappService } from "./whatsapp";
-import z from "zod";
+import { z } from "zod/v4";
 
 const appRouter = router({
   getQrCode: publicProcedure.query(async () => {
@@ -14,13 +14,18 @@ const appRouter = router({
   sendBulkMessages: publicProcedure
     .input(
       z.object({
+        message: z.array(z.union([z.string(), z.number()])),
         numbers: z.array(z.string()),
-        message: z.string(),
+        data: z.array(z.array(z.string().nullable())).optional(),
       })
     )
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       return {
-        submitId: whatsappService.startBulkJob(input.numbers, input.message),
+        submitId: await whatsappService.startBulkJob(
+          input.numbers,
+          input.message,
+          input.data
+        ),
       };
     }),
   getBulkProgress: publicProcedure

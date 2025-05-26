@@ -105,7 +105,7 @@ export function Bulk() {
           setNumbers={setNumbers}
           message={message}
           setMessage={setMessage}
-          onSubmit={() => sendMutation.mutate({ numbers, message })}
+          onSubmit={() => sendMutation.mutate({ numbers, message: [message] })}
           isLoading={sendMutation.isPending}
           addNumbersToList={addNumbersToList}
         />

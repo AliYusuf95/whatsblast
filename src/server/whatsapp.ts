@@ -1,15 +1,37 @@
 import { Client, LocalAuth } from "whatsapp-web.js";
 import qrcode from "qrcode";
 import { randomUUID } from "crypto";
-import { parsePhoneNumberFromString } from "libphonenumber-js";
+import {
+  parsePhoneNumberFromString,
+  type CountryCode,
+} from "libphonenumber-js";
 import humanizeDuration from "humanize-duration";
 
 type BulkJob = {
   numbers: string[];
-  message: string;
+  message: (string | number)[];
+  data?: (string | null)[][];
   results: { number: string; status: string; error?: string }[];
   status: "PENDING" | "IN_PROGRESS" | "DONE";
 };
+
+export function constructMessage(
+  message: (string | number)[],
+  data?: (string | null)[]
+): string {
+  if (!data) {
+    return message.join("");
+  }
+
+  return message
+    .map((part) => {
+      if (typeof part === "number") {
+        return data[part]?.toString() || "";
+      }
+      return part;
+    })
+    .join("");
+}
 
 const WHATSAPP_INACTIVITY_TIMEOUT = Number(
   process.env.BUN_PUBLIC_WHATSAPP_INACTIVITY_TIMEOUT
@@ -193,7 +215,11 @@ class WhatsAppService {
     return loggedIn && isReady;
   }
 
-  async startBulkJob(numbers: string[], message: string) {
+  async startBulkJob(
+    numbers: string[],
+    message: (string | number)[],
+    data?: (string | null)[][]
+  ) {
     const client = await this.wrapper.getClient();
     // Ensure numbers are unique and valid using libphonenumber-js
     const uniqueNumbers = Array.from(new Set(numbers));
@@ -212,8 +238,9 @@ class WhatsAppService {
 
     const submitId = randomUUID();
     const job: BulkJob = {
-      numbers: uniqueNumbers,
+      numbers: validNumbers,
       message,
+      data,
       results: [],
       status: "PENDING",
     };
@@ -248,19 +275,16 @@ class WhatsAppService {
     }
 
     // Only send to valid numbers
-    this._sendBulk(submitId, job, validNumbers);
+    this._sendBulk(submitId, job);
     return submitId;
   }
 
-  private async _sendBulk(
-    submitId: string,
-    job: BulkJob,
-    validNumbers: string[]
-  ) {
+  private async _sendBulk(submitId: string, job: BulkJob) {
     const client = await this.wrapper.getClient();
     job.status = "IN_PROGRESS";
+
     if (!this.isLoggedIn()) {
-      for (const number of validNumbers) {
+      for (const number of job.numbers) {
         job.results.push({
           number,
           status: "FAILED",
@@ -270,25 +294,36 @@ class WhatsAppService {
       job.status = "DONE";
       return;
     }
+
     // Batch sending logic
     const batchSize = 10; // Number of messages per batch
     const batchDelay = 2000; // Delay between batches in ms (2 seconds)
-    for (let i = 0; i < validNumbers.length; i += batchSize) {
-      const batch = validNumbers.slice(i, i + batchSize);
+
+    for (let i = 0; i < job.numbers.length; i += batchSize) {
+      const batch = job.numbers.slice(i, i + batchSize);
+      const batchData = job.data?.slice(i, i + batchSize);
+
       await Promise.all(
-        batch.map(async (number) => {
+        batch.map(async (number, batchIndex) => {
           try {
-            await client.sendMessage(number + "@c.us", job.message);
+            const messageText = constructMessage(
+              job.message,
+              batchData?.[batchIndex]
+            );
+
+            await client.sendMessage(number + "@c.us", messageText);
             job.results.push({ number, status: "SENT" });
           } catch (e) {
             job.results.push({ number, status: "FAILED", error: e.message });
           }
         })
       );
-      if (i + batchSize < validNumbers.length) {
+
+      if (i + batchSize < job.numbers.length) {
         await new Promise((res) => setTimeout(res, batchDelay));
       }
     }
+
     job.status = "DONE";
   }
 

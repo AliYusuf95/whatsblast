@@ -42,9 +42,15 @@ export function SiteHeader() {
       <div className="flex h-[--header-height] w-full items-center gap-2 px-4">
         <img src={logo} className="h-10" alt="logo" />
         {loggedIn ? (
-          <Link to="/bulk" className="[&.active]:font-bold">
-            Send Messages
-          </Link>
+          <>
+            <Link to="/bulk" className="[&.active]:font-bold">
+              Send Messages
+            </Link>
+
+            <Link to="/bulk-template" className="[&.active]:font-bold">
+              Send Template
+            </Link>
+          </>
         ) : (
           <Link to="/login" className="[&.active]:font-bold">
             Login
