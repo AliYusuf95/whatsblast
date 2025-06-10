@@ -1,17 +1,20 @@
-import { createRootRoute, Outlet, useRouter } from "@tanstack/react-router";
-import { SiteHeader } from "@/components/SiteHeader";
+import { createRootRouteWithContext, Outlet, useRouterState } from '@tanstack/react-router';
+import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
+import type { authClient } from '@/lib/auth-client';
 
-export const Route = createRootRoute({
+interface AuthContext {
+  auth: ReturnType<typeof authClient.useSession>['data'] | undefined;
+  isAuthenticated: boolean;
+  getTitle?: () => string;
+}
+
+export const Route = createRootRouteWithContext<AuthContext>()({
   component: RootLayout,
 });
 
 function RootLayout() {
-  const router = useRouter();
-  router.navigate({ to: "/login" });
-
   return (
     <>
-      <SiteHeader />
       <Outlet />
       {/* <TanStackRouterDevtools /> */}
     </>

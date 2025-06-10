@@ -1,9 +1,36 @@
 services:
   app:
+    container_name: wharsblast-app
     build:
       context: .
-      dockerfile: Dockerfile2
+      dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - '8080:8080'
+    volumes:
+      - ./data:/usr/src/app/data
     environment:
       - PORT=8080
+      - BETTER_AUTH_SECRET=change-it
+      - BETTER_AUTH_URL=http://0.0.0.0:8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - AUTH_TRUST_HOST=true
+      - BASE_URL=http://0.0.0.0:8080
+      # - BUN_PUBLIC_OAUTH_PROVIDER_ID=
+      # - BUN_PUBLIC_OAUTH_PROVIDER_NAME=
+      # - OAUTH_CLIENT_ID=
+      # - OAUTH_CLIENT_SECRET=
+      # - OAUTH_DISCOVERY_URL=
+
+  redis:
+    image: redis:alpine
+    container_name: wharsblast-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5

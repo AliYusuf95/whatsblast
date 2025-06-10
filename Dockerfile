@@ -1,48 +1,40 @@
-# Use the official Bun image
-# See all versions at https://hub.docker.com/r/oven/bun/tags
-FROM ghcr.io/puppeteer/puppeteer:18.2.1 AS base
-
-WORKDIR /bun
-
-ENV BUN_INSTALL="/usr/local"
-ENV PATH="$BUN_INSTALL/bin:$PATH"
-ENV NODE_ENV="production"
-
-USER root
-RUN curl -fsSL https://bun.sh/install | bash
-
-USER pptruser
+# use the official Bun image
+# see all versions at https://hub.docker.com/r/oven/bun/tags
+FROM oven/bun:1 AS base
 WORKDIR /usr/src/app
 
-# Install dependencies into temp directory
-# This will cache them and speed up future builds
+# install dependencies into temp directory
+# this will cache them and speed up future builds
 FROM base AS install
+RUN mkdir -p /temp/dev
+COPY package.json bun.lock /temp/dev/
+RUN cd /temp/dev && bun install --frozen-lockfile
 
-WORKDIR /temp
+# install with --production (exclude devDependencies)
+RUN mkdir -p /temp/prod
+COPY package.json bun.lock /temp/prod/
+RUN cd /temp/prod && bun install --frozen-lockfile --production
 
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+# copy node_modules from temp directory
+# then copy all (non-ignored) project files into the image
+FROM base AS prerelease
+COPY --from=install /temp/dev/node_modules node_modules
+COPY . .
 
-# generate routes
-COPY bun-env.d.ts tsconfig.json bunfig.toml package.json ./
-COPY src src
+# [optional] tests & build
+# ENV NODE_ENV=production
+# RUN bun test
+# RUN bun run build
+RUN bun run generate-routes
 
-USER root
-RUN chown -R pptruser:pptruser /temp && \
-    chmod -R 755 /temp && \
-    bun run generate-routes
-
-# Copy production dependencies and source code into final image
+# copy production dependencies and source code into final image
 FROM base AS release
+COPY --from=install /temp/prod/node_modules node_modules
+COPY --from=prerelease /usr/src/app/src ./src
+COPY --from=prerelease /usr/src/app/package.json /usr/src/app/tsconfig.json /usr/src/app/bunfig.toml /usr/src/app/bun-env.d.ts /usr/src/app/drizzle.config.ts /usr/src/app/
 
-USER root
-COPY --from=install /temp/ ./
-RUN chown -R pptruser:pptruser /usr/src/app && \
-    chmod -R 755 /usr/src/app
-
-USER pptruser
 
 # Run the application
 EXPOSE 3000
 STOPSIGNAL SIGTERM
-ENTRYPOINT [ "bun", "run", "src/serve.ts" ]
+ENTRYPOINT [ "bun", "run", "/usr/src/app/src/serve.ts" ]

@@ -1,3 +1,9 @@
 [serve.static]
 plugins = ["bun-plugin-tailwind"]
 env = "BUN_PUBLIC_*"
+
+[test]
+preload = ["./src/server/test/__mocks__/bullmq.test"]
+coverageReporter = ["text", "lcov"]
+coverageDirectory = "./coverage"
+coverageThreshold = { lines = 0.9, functions = 0.9, statements = 0.9 }

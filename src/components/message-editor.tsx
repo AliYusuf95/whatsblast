@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useRef, useEffect } from "react";
+import { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import {
   createEditor,
   Editor,
@@ -8,10 +8,10 @@ import {
   Node,
   type BaseRange,
   type BaseEditor,
-} from "slate";
-import { Slate, Editable, withReact, ReactEditor } from "slate-react";
-import { withHistory } from "slate-history";
-import { Badge } from "@/components/ui/badge";
+} from 'slate';
+import { Slate, Editable, withReact, ReactEditor } from 'slate-react';
+import { withHistory } from 'slate-history';
+import { Badge } from '@/components/ui/badge';
 import {
   Command,
   CommandEmpty,
@@ -19,8 +19,8 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from "@/components/ui/command";
-import { createPortal } from "react-dom";
+} from '@/components/ui/command';
+import { createPortal } from 'react-dom';
 
 type Column = {
   index: number;
@@ -28,7 +28,7 @@ type Column = {
 };
 
 type CustomElement = {
-  type: "paragraph" | "mention";
+  type: 'paragraph' | 'mention';
   index?: number;
   children: CustomText[];
 };
@@ -42,14 +42,14 @@ type CustomText =
     }
   | {
       text: string;
-      type: "mention";
+      type: 'mention';
       index: number;
       children: {
         text: string;
       }[];
     };
 
-declare module "slate" {
+declare module 'slate' {
   interface CustomTypes {
     Editor: BaseEditor & ReactEditor;
     Element: CustomElement;
@@ -65,8 +65,8 @@ type MessageEditorProps = {
 
 const initialValue: CustomElement[] = [
   {
-    type: "paragraph",
-    children: [{ text: "" }],
+    type: 'paragraph',
+    children: [{ text: '' }],
   },
 ];
 
@@ -74,46 +74,35 @@ const withMentions = (editor: Editor) => {
   const { isInline, isVoid } = editor;
 
   editor.isInline = (element) => {
-    return element.type === "mention" ? true : isInline(element);
+    return element.type === 'mention' ? true : isInline(element);
   };
 
   editor.isVoid = (element) => {
-    return element.type === "mention" ? true : isVoid(element);
+    return element.type === 'mention' ? true : isVoid(element);
   };
 
   return editor;
 };
 
-export function MessageEditor({
-  columns,
-  value,
-  onChange,
-}: MessageEditorProps) {
-  const [editor] = useState(() =>
-    withMentions(withHistory(withReact(createEditor())))
-  );
+export function MessageEditor({ columns, value, onChange }: MessageEditorProps) {
+  const [editor] = useState(() => withMentions(withHistory(withReact(createEditor()))));
   const [target, setTarget] = useState<BaseRange | null>(null);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
   const [index, setIndex] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
 
   const renderElement = useCallback(
     ({ attributes, children, element }: any) => {
-      if (element.type === "mention") {
+      if (element.type === 'mention') {
         return (
-          <Badge
-            {...attributes}
-            variant="default"
-            className="mx-1"
-            contentEditable={false}
-          >
-            {columns[element.index!].name}
+          <Badge {...attributes} variant="default" className="mx-1" contentEditable={false}>
+            {columns[element.index!]?.name}
           </Badge>
         );
       }
       return <p {...attributes}>{children}</p>;
     },
-    [columns]
+    [columns],
   );
 
   const renderLeaf = useCallback(({ attributes, children }: any) => {
@@ -124,33 +113,33 @@ export function MessageEditor({
     (event: React.KeyboardEvent) => {
       if (target) {
         switch (event.key) {
-          case "ArrowDown":
+          case 'ArrowDown':
             event.preventDefault();
             setIndex((i) => (i + 1) % columns.length);
             return;
-          case "ArrowUp":
+          case 'ArrowUp':
             event.preventDefault();
             setIndex((i) => (i - 1 + columns.length) % columns.length);
             return;
-          case "Tab":
-          case "Enter":
+          case 'Tab':
+          case 'Enter':
             event.preventDefault();
             Transforms.select(editor, target);
             insertMention(editor, filteredColumns[index]);
             setTarget(null);
             return;
-          case "Escape":
+          case 'Escape':
             event.preventDefault();
             setTarget(null);
             return;
         }
       }
 
-      if (event.key === "@") {
+      if (event.key === '@') {
         const { selection } = editor;
         if (selection) {
           const [start] = Range.edges(selection);
-          const wordBefore = Editor.before(editor, start, { unit: "word" });
+          const wordBefore = Editor.before(editor, start, { unit: 'word' });
           const before = wordBefore && Editor.before(editor, wordBefore);
           const beforeRange = before && Editor.range(editor, before, start);
           const beforeText = beforeRange && Editor.string(editor, beforeRange);
@@ -162,89 +151,81 @@ export function MessageEditor({
 
           if (beforeMatch && afterMatch) {
             setTarget(beforeRange);
-            setSearch("");
+            setSearch('');
             setIndex(0);
             return;
           }
         }
       }
     },
-    [editor, target, columns, index]
+    [editor, target, columns, index],
   );
 
   const insertMention = useCallback((editor: Editor, column: Column) => {
     const mention: CustomElement = {
-      type: "mention",
+      type: 'mention',
       index: column.index,
-      children: [{ text: "" }],
+      children: [{ text: '' }],
     };
     Transforms.insertNodes(editor, mention);
     Transforms.move(editor);
   }, []);
 
   const filteredColumns = useMemo(() => {
-    return columns.filter((column) =>
-      column.name.toLowerCase().includes(search.toLowerCase())
-    );
+    return columns.filter((column) => column.name.toLowerCase().includes(search.toLowerCase()));
   }, [columns, search]);
 
-  const serialize = useCallback(
-    (nodes: CustomElement[]): (string | number)[] => {
-      const result: (string | number)[] = [];
-      nodes.forEach((node) => {
-        node.children.forEach((child) => {
-          if (child.type === "mention" && typeof child.index === "number") {
-            result.push(child.index);
-          }
-          if (typeof child.text === "string") {
-            result.push(child.text);
-          }
-        });
-        result.push("\n"); // Add a newline after each node
-      });
-      // Remove the last newline if it exists
-      if (result.length && result[result.length - 1] === "\n") {
-        result.pop();
-      }
-      return result;
-    },
-    []
-  );
-
-  const deserialize = useCallback(
-    (value: (string | number)[]): CustomElement[] => {
-      if (!value.length) {
-        return [
-          {
-            type: "paragraph",
-            children: [{ text: "" }],
-          },
-        ];
-      }
-
-      const children: CustomText[] = [];
-
-      value.forEach((part) => {
-        if (typeof part === "number") {
-          children.push({
-            type: "mention",
-            index: part,
-            children: [{ text: "" }],
-          } as unknown as CustomText);
-        } else {
-          children.push({ text: part });
+  const serialize = useCallback((nodes: CustomElement[]): (string | number)[] => {
+    const result: (string | number)[] = [];
+    nodes.forEach((node) => {
+      node.children.forEach((child) => {
+        if (child.type === 'mention' && typeof child.index === 'number') {
+          result.push(child.index);
+        }
+        if (typeof child.text === 'string') {
+          result.push(child.text);
         }
       });
+      result.push('\n'); // Add a newline after each node
+    });
+    // Remove the last newline if it exists
+    if (result.length && result[result.length - 1] === '\n') {
+      result.pop();
+    }
+    return result;
+  }, []);
 
+  const deserialize = useCallback((value: (string | number)[]): CustomElement[] => {
+    if (!value.length) {
       return [
         {
-          type: "paragraph",
-          children: children.length ? children : [{ text: "" }],
+          type: 'paragraph',
+          children: [{ text: '' }],
         },
       ];
-    },
-    []
-  );
+    }
+
+    const children: CustomText[] = [];
+
+    value.forEach((part) => {
+      if (typeof part === 'number') {
+        children.push({
+          type: 'mention',
+          index: part,
+          children: [{ text: '' }],
+        } as unknown as CustomText);
+      } else {
+        children.push({ text: part });
+      }
+    });
+
+    return [
+      {
+        type: 'paragraph',
+        children: children.length ? children : [{ text: '' }],
+      },
+    ];
+  }, []);
 
   const handleEditorChange = useCallback(
     (newValue: CustomElement[]) => {
@@ -252,7 +233,7 @@ export function MessageEditor({
 
       if (selection && Range.isCollapsed(selection)) {
         const [start] = Range.edges(selection);
-        const wordBefore = Editor.before(editor, start, { unit: "word" });
+        const wordBefore = Editor.before(editor, start, { unit: 'word' });
         const before = wordBefore && Editor.before(editor, wordBefore);
         const beforeRange = before && Editor.range(editor, before, start);
         const beforeText = beforeRange && Editor.string(editor, beforeRange);
@@ -269,7 +250,7 @@ export function MessageEditor({
       setTarget(null);
       onChange(serialize(newValue));
     },
-    [editor, onChange, serialize]
+    [editor, onChange, serialize],
   );
 
   useEffect(() => {
@@ -283,11 +264,7 @@ export function MessageEditor({
   }, [editor, index, search, target]);
 
   return (
-    <Slate
-      editor={editor}
-      initialValue={deserialize(value)}
-      onChange={handleEditorChange}
-    >
+    <Slate editor={editor} initialValue={deserialize(value)} onChange={handleEditorChange}>
       <Editable
         renderElement={renderElement}
         renderLeaf={renderLeaf}
@@ -295,20 +272,20 @@ export function MessageEditor({
         placeholder="Type @ to insert a column..."
         className="p-2 border rounded bg-accent"
         style={{
-          minHeight: "100px",
+          minHeight: '100px',
         }}
         renderPlaceholder={({ attributes, children }) => (
           <span
             {...attributes}
             style={{
-              position: "absolute",
-              pointerEvents: "none",
-              width: "100%",
-              maxWidth: "100%",
-              display: "block",
+              position: 'absolute',
+              pointerEvents: 'none',
+              width: '100%',
+              maxWidth: '100%',
+              display: 'block',
               opacity: 0.333,
-              userSelect: "none",
-              textDecoration: "none",
+              userSelect: 'none',
+              textDecoration: 'none',
             }}
           >
             {children}
@@ -319,14 +296,14 @@ export function MessageEditor({
         <div
           ref={ref}
           style={{
-            top: "-9999px",
-            left: "-9999px",
-            position: "absolute",
+            top: '-9999px',
+            left: '-9999px',
+            position: 'absolute',
             zIndex: 1,
-            padding: "3px",
-            background: "white",
-            borderRadius: "4px",
-            boxShadow: "0 1px 5px rgba(0,0,0,.2)",
+            padding: '3px',
+            background: 'white',
+            borderRadius: '4px',
+            boxShadow: '0 1px 5px rgba(0,0,0,.2)',
           }}
         >
           <Command className="rounded-lg border shadow-md">
@@ -346,7 +323,7 @@ export function MessageEditor({
                       setTarget(null);
                     }}
                     autoFocus={false}
-                    className={i === index ? "bg-accent" : ""}
+                    className={i === index ? 'bg-accent' : ''}
                   >
                     <p className="hidden">{index}</p>
                     {column.name}

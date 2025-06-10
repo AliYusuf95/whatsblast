@@ -4,6 +4,7 @@ node_modules
 # output
 out
 dist
+data
 *.tgz
 
 # code coverage
@@ -26,16 +27,23 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .eslintcache
 .cache
 *.tsbuildinfo
+.tanstack
 
 # IntelliJ based IDEs
 .idea
 
+# VS Code
+.vscode
+
 # Finder (MacOS) folder config
-.DS_Store\
+.DS_Store
 
 # wwebjs
 .wwebjs_auth
 .wwebjs_cache
+
+# board
+board
 
 # router
 src/routeTree.gen.ts
