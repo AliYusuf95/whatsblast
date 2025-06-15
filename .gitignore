@@ -47,3 +47,6 @@ board
 
 # router
 src/routeTree.gen.ts
+
+# other
+memory_bank

@@ -9,7 +9,7 @@ import { runMigrations } from './server/db/config';
 import { workersManager } from './server/workers/workers-manager';
 
 const server = serve({
-  hostname: '0.0.0.0', // Bind to all interfaces
+  hostname: process.env.HOST,
   idleTimeout: 50,
   routes: {
     // Serve index.html for all unmatched routes.

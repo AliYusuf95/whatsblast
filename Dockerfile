@@ -22,7 +22,7 @@ COPY --from=install /temp/dev/node_modules node_modules
 COPY . .
 
 # [optional] tests & build
-# ENV NODE_ENV=production
+ENV NODE_ENV=production
 # RUN bun test
 # RUN bun run build
 RUN bun run generate-routes
@@ -31,8 +31,12 @@ RUN bun run generate-routes
 FROM base AS release
 COPY --from=install /temp/prod/node_modules node_modules
 COPY --from=prerelease /usr/src/app/src ./src
+COPY --from=prerelease /usr/src/app/scripts ./scripts
 COPY --from=prerelease /usr/src/app/package.json /usr/src/app/tsconfig.json /usr/src/app/bunfig.toml /usr/src/app/bun-env.d.ts /usr/src/app/drizzle.config.ts /usr/src/app/
 
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD bun run /usr/src/app/scripts/healthcheck.ts || exit 1
 
 # Run the application
 EXPOSE 3000
