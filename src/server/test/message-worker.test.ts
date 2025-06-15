@@ -1,7 +1,7 @@
 // Message Worker Unit Tests
 // Tests messaging operations, bulk sending, and message status tracking
 
-import { test, expect, describe, beforeEach, afterEach, mock } from 'bun:test';
+import { test, expect, describe, beforeEach, afterEach, mock, jest, spyOn } from 'bun:test';
 import { MessageWorker } from '../workers/message-worker';
 import { QUEUE_NAMES } from '../queue/config';
 import type {
@@ -9,15 +9,19 @@ import type {
   BulkMessageJobData,
   MessageStatusJobData,
 } from '../queue/job-types';
-import { createTestSession, createMockJob, initTestDatabase } from './setup';
+import { createTestSession, createMockJob, initTestDatabase, testUtils } from './setup';
 import { whatsappSessions } from '../db/schema';
+import {
+  WhatsAppBulkService,
+  type WhatsAppConnectionManager,
+  type WhatsAppSessionService,
+} from '../services';
 
 describe('MessageWorker', () => {
   let messageWorker: MessageWorker;
-  let mockWhatsappConnectionManager: any;
-  let mockWhatsappSessionService: any;
-  let mockWhatsappBulkService: any;
-  let mockConstructMessage: any;
+  let mockWhatsappConnectionManager: WhatsAppConnectionManager & { getConnection: jest.Mock };
+  let mockWhatsappSessionService: WhatsAppSessionService;
+  let mockWhatsappBulkService: WhatsAppBulkService;
   let db: Awaited<ReturnType<typeof initTestDatabase>>['db'];
   let cleanupDb: () => void;
 
@@ -26,9 +30,11 @@ describe('MessageWorker', () => {
     db = dbSetup.db;
     cleanupDb = dbSetup.cleanup;
 
-    // Create fresh mocks for each test
-    mockWhatsappConnectionManager = {
-      getConnection: mock(() => null),
+    const { whatsappConnectionManager, whatsappBulkService, whatsappSessionService } =
+      testUtils.mockServices({ db });
+
+    mockWhatsappConnectionManager = Object.assign(whatsappConnectionManager, {
+      getConnection: mock(() => null), // Default to no connection
       createConnection: mock(() =>
         Promise.resolve({
           isConnected: mock(() => true),
@@ -36,22 +42,11 @@ describe('MessageWorker', () => {
           sendMessage: mock(() => Promise.resolve({ key: { id: 'message-id-123' } })),
         }),
       ),
-      removeConnection: mock(() => Promise.resolve()),
-    };
+    });
 
-    mockWhatsappSessionService = {
-      getSessionById: mock(() => Promise.resolve(null)),
-      updateLastUsed: mock(() => Promise.resolve()),
-      updateSession: mock(() => Promise.resolve()),
-    };
+    mockWhatsappSessionService = whatsappSessionService;
 
-    mockWhatsappBulkService = {
-      updateBulkJob: mock(() => Promise.resolve()),
-      getBulkJobMessages: mock(() => Promise.resolve([])),
-      updateMessageStatus: mock(() => Promise.resolve()),
-    };
-
-    mockConstructMessage = mock((template: any[], data?: any[]) => 'Test message');
+    mockWhatsappBulkService = whatsappBulkService;
 
     // Create MessageWorker with injected dependencies
     messageWorker = new MessageWorker({
@@ -91,8 +86,7 @@ describe('MessageWorker', () => {
       // Insert session into database
       await db.insert(whatsappSessions).values(sessionData);
 
-      // Mock session service to return the session
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(sessionData));
+      const spyOnUpdateLastUsed = spyOn(mockWhatsappSessionService, 'updateLastUsed');
 
       // Mock connection manager to return existing connection
       const mockConnection = {
@@ -100,7 +94,7 @@ describe('MessageWorker', () => {
         getConnectionState: mock(() => 'open'),
         sendMessage: mock(() => Promise.resolve({ key: { id: 'message-id-123' } })),
       };
-      mockWhatsappConnectionManager.getConnection.mockReturnValue(mockConnection);
+      (mockWhatsappConnectionManager.getConnection as any).mockReturnValue(mockConnection);
 
       const jobData: SingleMessageJobData = {
         type: 'single_message',
@@ -130,23 +124,23 @@ describe('MessageWorker', () => {
       expect(mockConnection.sendMessage).toHaveBeenCalledWith('+1987654321@c.us', 'Hello World!');
 
       // Verify session was updated
-      expect(mockWhatsappSessionService.updateLastUsed).toHaveBeenCalledWith(sessionId);
+      expect(spyOnUpdateLastUsed).toHaveBeenCalledWith(sessionId);
     });
 
     test('should create new connection if none exists', async () => {
-      const sessionId = 'test-session-2';
       const userId = 'test-user-2';
 
       // Create test session
       const session = await createTestSession({
-        id: sessionId,
+        id: undefined,
         userId,
         status: 'paired',
         phone: '+1234567890',
         name: 'Test User',
       });
 
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(session));
+      const { id: sessionId } = await mockWhatsappSessionService.createSession(session);
+      await mockWhatsappSessionService.updateSession(sessionId, session);
 
       // Mock no existing connection
       mockWhatsappConnectionManager.getConnection.mockReturnValue(null);
@@ -175,18 +169,18 @@ describe('MessageWorker', () => {
     });
 
     test('should handle non-text message types with error', async () => {
-      const sessionId = 'test-session-3';
       const userId = 'test-user-3';
 
       const session = await createTestSession({
-        id: sessionId,
+        id: undefined,
         userId,
         status: 'paired',
         phone: '+1234567890',
         name: 'Test User',
       });
 
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(session));
+      const { id: sessionId } = await mockWhatsappSessionService.createSession(session);
+      await mockWhatsappSessionService.updateSession(sessionId, session);
 
       const mockConnection = {
         isConnected: mock(() => true),
@@ -218,9 +212,6 @@ describe('MessageWorker', () => {
     test('should handle session not found error', async () => {
       const sessionId = 'non-existent-session';
 
-      // Mock session not found
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(null));
-
       const jobData: SingleMessageJobData = {
         type: 'single_message',
         sessionId,
@@ -242,18 +233,16 @@ describe('MessageWorker', () => {
     });
 
     test('should handle unauthenticated session error', async () => {
-      const sessionId = 'test-session-4';
       const userId = 'test-user-4';
 
       const session = await createTestSession({
-        id: sessionId,
         userId,
         status: 'not_auth', // Not authenticated
         phone: null,
         name: null,
       });
 
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(session));
+      const { id: sessionId } = await mockWhatsappSessionService.createSession(session);
 
       const jobData: SingleMessageJobData = {
         type: 'single_message',
@@ -276,18 +265,18 @@ describe('MessageWorker', () => {
 
   describe('Bulk Message', () => {
     test('should handle bulk message sending successfully', async () => {
-      const sessionId = 'test-session-6';
       const userId = 'test-user-6';
 
       const session = await createTestSession({
-        id: sessionId,
+        id: undefined,
         userId,
         status: 'paired',
         phone: '+1234567890',
         name: 'Test User',
       });
 
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(session));
+      const { id: sessionId } = await mockWhatsappSessionService.createSession(session);
+      await mockWhatsappSessionService.updateSession(sessionId, session);
 
       const mockConnection = {
         isConnected: mock(() => true),
@@ -313,12 +302,20 @@ describe('MessageWorker', () => {
       };
 
       const mockJob = createMockJob(jobData);
+      const bulkJob = await mockWhatsappBulkService.createBulkJob({
+        sessionId,
+        userId,
+        name: 'Test Bulk Job',
+        recipients: jobData.recipients,
+        template: jobData.template,
+      });
+      mockJob.data.bulkJobId = bulkJob.job.id;
+
       const result = await messageWorker.processJob(mockJob);
 
       expect(result.success).toBe(true);
       expect(result.sentCount).toBe(3);
       expect(result.failedCount).toBe(0);
-      expect(result.data?.bulkJobId).toBe('bulk-job-123');
       expect(result.data?.total).toBe(3);
 
       // Verify all messages were sent
@@ -326,18 +323,18 @@ describe('MessageWorker', () => {
     });
 
     test('should handle bulk message with template variables', async () => {
-      const sessionId = 'test-session-7';
       const userId = 'test-user-7';
 
       const session = await createTestSession({
-        id: sessionId,
+        id: undefined,
         userId,
         status: 'paired',
         phone: '+1234567890',
         name: 'Test User',
       });
 
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(session));
+      const { id: sessionId } = await mockWhatsappSessionService.createSession(session);
+      await mockWhatsappSessionService.updateSession(sessionId, session);
 
       const mockConnection = {
         isConnected: mock(() => true),
@@ -370,6 +367,15 @@ describe('MessageWorker', () => {
       };
 
       const mockJob = createMockJob(jobData);
+      const bulkJob = await mockWhatsappBulkService.createBulkJob({
+        sessionId,
+        userId,
+        name: 'Test Bulk Job',
+        recipients: jobData.recipients,
+        template: jobData.template,
+      });
+      mockJob.data.bulkJobId = bulkJob.job.id;
+
       const result = await messageWorker.processJob(mockJob);
 
       expect(result.success).toBe(true);
@@ -381,18 +387,18 @@ describe('MessageWorker', () => {
     });
 
     test('should handle partial bulk message failures', async () => {
-      const sessionId = 'test-session-8';
       const userId = 'test-user-8';
 
       const session = await createTestSession({
-        id: sessionId,
+        id: undefined,
         userId,
         status: 'paired',
         phone: '+1234567890',
         name: 'Test User',
       });
 
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(session));
+      const { id: sessionId } = await mockWhatsappSessionService.createSession(session);
+      await mockWhatsappSessionService.updateSession(sessionId, session);
 
       // Mock connection that fails for specific phone number
       const mockConnection = {
@@ -424,6 +430,14 @@ describe('MessageWorker', () => {
       };
 
       const mockJob = createMockJob(jobData);
+      const bulkJob = await mockWhatsappBulkService.createBulkJob({
+        sessionId,
+        userId,
+        name: 'Test Bulk Job',
+        recipients: jobData.recipients,
+        template: jobData.template,
+      });
+      mockJob.data.bulkJobId = bulkJob.job.id;
       const result = await messageWorker.processJob(mockJob);
 
       expect(result.success).toBe(false); // Overall failure due to partial failures
@@ -435,18 +449,16 @@ describe('MessageWorker', () => {
 
   describe('Message Status', () => {
     test('should handle message status check', async () => {
-      const sessionId = 'test-session-9';
       const messageId = 'message-123';
 
       const session = await createTestSession({
-        id: sessionId,
         userId: 'test-user-9',
         status: 'paired',
         phone: '+1234567890',
         name: 'Test User',
       });
 
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(session));
+      const { id: sessionId } = await mockWhatsappSessionService.createSession(session);
 
       const mockConnection = {
         isConnected: mock(() => true),
@@ -473,24 +485,22 @@ describe('MessageWorker', () => {
     });
 
     test('should handle message status update', async () => {
-      const sessionId = 'test-session-10';
       const messageId = 'message-456';
 
       const session = await createTestSession({
-        id: sessionId,
         userId: 'test-user-10',
         status: 'paired',
         phone: '+1234567890',
         name: 'Test User',
       });
 
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(session));
+      const { id: sessionId } = await mockWhatsappSessionService.createSession(session);
 
       const mockConnection = {
         isConnected: mock(() => true),
         getConnectionState: mock(() => 'open'),
       };
-      mockWhatsappConnectionManager.getConnection.mockReturnValue(mockConnection);
+      (mockWhatsappConnectionManager.getConnection as any).mockReturnValue(mockConnection);
 
       const jobData: MessageStatusJobData = {
         type: 'message_status',
@@ -509,20 +519,14 @@ describe('MessageWorker', () => {
     });
 
     test('should handle no active connection error', async () => {
-      const sessionId = 'test-session-11';
-
       const session = await createTestSession({
-        id: sessionId,
         userId: 'test-user-11',
         status: 'paired',
         phone: '+1234567890',
         name: 'Test User',
       });
 
-      mockWhatsappSessionService.getSessionById.mockReturnValue(Promise.resolve(session));
-
-      // Mock no connection
-      mockWhatsappConnectionManager.getConnection.mockReturnValue(null);
+      const { id: sessionId } = await mockWhatsappSessionService.createSession(session);
 
       const jobData: MessageStatusJobData = {
         type: 'message_status',

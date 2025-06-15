@@ -42,11 +42,14 @@ export abstract class BaseWorker<T extends AllJobData> {
     const startTime = Date.now();
     const { id, name, data } = job;
 
-    console.log(`[${this.queueName}] Processing job ${id} (${name}):`, {
-      sessionId: data.sessionId,
-      type: data.type,
-      timestamp: data.timestamp,
-    });
+    console.log(
+      `[${this.queueName}] Processing job ${id} (${name}):`,
+      JSON.stringify({
+        sessionId: data.sessionId,
+        type: data.type,
+        timestamp: data.timestamp,
+      }),
+    );
 
     try {
       // Update job progress

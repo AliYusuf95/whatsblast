@@ -4,6 +4,7 @@ import { eq, and, lte } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import { clearAuthState, hasValidAuth } from './auth-state';
 import dayjs from 'dayjs';
+import type { SQLiteUpdateSetSource } from 'drizzle-orm/sqlite-core';
 
 /**
  * WhatsApp Session Service
@@ -31,14 +32,7 @@ export interface CreateSessionInput {
   description: string;
 }
 
-export interface UpdateSessionInput {
-  description?: string;
-  status?: SessionStatus;
-  phone?: string;
-  name?: string;
-  qrCode?: string | null;
-  qrExpiresAt?: Date | null;
-}
+export type UpdateSessionInput = SQLiteUpdateSetSource<typeof whatsappSessions>;
 
 export class WhatsAppSessionService {
   private db: typeof db;

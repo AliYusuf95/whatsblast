@@ -208,11 +208,14 @@ export class WhatsAppConnection extends EventEmitter {
     }
 
     return new Promise<void>(async (resolve, reject) => {
-      console.log(`Waiting for connection for session ${this.sessionId}`, {
-        isQRSession: this.isQRSession,
-        currentState: this._connectionState,
-        timeoutMs,
-      });
+      console.log(
+        `Waiting for connection for session ${this.sessionId}`,
+        JSON.stringify({
+          isQRSession: this.isQRSession,
+          currentState: this._connectionState,
+          timeoutMs,
+        }),
+      );
 
       // Set appropriate waiting state
       if (this.isQRSession) {
@@ -322,12 +325,15 @@ export class WhatsAppConnection extends EventEmitter {
   private async handleConnectionUpdate(update: Partial<ConnectionState>) {
     const { connection, lastDisconnect, qr } = update;
 
-    console.log(`Session ${this.sessionId} connection update:`, {
-      connection,
-      qr: !!qr,
-      currentState: this._connectionState,
-      hasWaitResolver: !!this.connectionWaitResolve,
-    });
+    console.log(
+      `Session ${this.sessionId} connection update:`,
+      JSON.stringify({
+        connection,
+        qr: !!qr,
+        currentState: this._connectionState,
+        hasWaitResolver: !!this.connectionWaitResolve,
+      }),
+    );
 
     // Handle QR code generation (only for not_auth sessions)
     if (qr && this.isQRSession) {

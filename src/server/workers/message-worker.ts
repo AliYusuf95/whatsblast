@@ -193,6 +193,16 @@ export class MessageWorker extends BaseWorker<MessageJobData> {
     try {
       await job.updateProgress(5);
 
+      // Check if job was cancelled before starting
+      const currentJob = await this.whatsappBulkService.getBulkJobById(bulkJobId);
+      if (!currentJob) {
+        throw new Error(`Bulk job ${bulkJobId} not found`);
+      }
+
+      if (currentJob.status === 'cancelled') {
+        throw new Error('Job was cancelled before processing started');
+      }
+
       // Update job status to processing in database
       await this.whatsappBulkService.updateBulkJob(bulkJobId, {
         status: 'processing',
@@ -240,11 +250,24 @@ export class MessageWorker extends BaseWorker<MessageJobData> {
 
       // Process recipients in batches
       for (let i = 0; i < recipients.length; i += batchSize) {
+        // Check for cancellation before each batch
+        const jobStatus = await this.whatsappBulkService.getBulkJobById(bulkJobId);
+        if (jobStatus?.status === 'cancelled') {
+          console.log(`Bulk job ${bulkJobId} was cancelled, stopping processing`);
+          break;
+        }
+
         const batch = recipients.slice(i, i + batchSize);
 
         // Process batch in parallel
         const batchPromises = batch.map(async (recipient) => {
           try {
+            // Check for cancellation before processing each message
+            const bulkJob = await this.whatsappBulkService.getBulkJobById(bulkJobId);
+            if (bulkJob?.status === 'cancelled') {
+              throw new Error('Job was cancelled');
+            }
+
             // Construct message with variables
             let messageContent = constructMessage(template, recipient.data);
 
@@ -258,7 +281,6 @@ export class MessageWorker extends BaseWorker<MessageJobData> {
             const messageId = messageResult?.key?.id;
 
             sentCount++;
-            processedCount++;
 
             // Update individual message status in database using messageId from recipient
             if (recipient.messageId) {
@@ -268,7 +290,6 @@ export class MessageWorker extends BaseWorker<MessageJobData> {
             return { success: true, messageId, recipient: recipient.phone };
           } catch (error) {
             failedCount++;
-            processedCount++;
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             errors.push({ item: recipient, error: errorMessage });
 
@@ -291,6 +312,8 @@ export class MessageWorker extends BaseWorker<MessageJobData> {
 
         // Wait for batch completion
         await Promise.allSettled(batchPromises);
+
+        processedCount += batch.length;
 
         // Update job progress in database after each batch
         await this.whatsappBulkService.updateBulkJob(bulkJobId, {

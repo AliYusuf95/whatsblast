@@ -17,7 +17,6 @@ import { whatsappConnectionManager } from '../services/whatsapp/connection-manag
 import { whatsappSessionService } from '../services/whatsapp/session-service';
 import { db } from '../db';
 import { hasValidAuth, clearAuthState } from '../services/whatsapp/auth-state';
-import { th } from 'zod/v4/locales';
 
 export interface AuthWorkerDependencies {
   connectionManager: typeof whatsappConnectionManager;
