@@ -1,4 +1,8 @@
-import makeWASocket, { DisconnectReason, proto } from '@whiskeysockets/baileys';
+import makeWASocket, {
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  proto,
+} from '@whiskeysockets/baileys';
 import type {
   WASocket,
   ConnectionState,
@@ -152,15 +156,24 @@ export class WhatsAppConnection extends EventEmitter {
       // Get database-backed auth state
       const { state, saveCreds } = await useDatabaseAuthState(this.sessionId, this.database);
 
+      const { version, isLatest } = await fetchLatestBaileysVersion();
+      console.log(`using WA v${version.join('.')}, isLatest: ${isLatest}`);
+
       const groupCache = new NodeCache();
+      // external map to store retry counts of messages when decryption/encryption fails
+      // keep this out of the socket itself, so as to prevent a message decryption/encryption loop across socket restarts
+      const msgRetryCounterCache = new NodeCache();
+
       // Create WhatsApp socket
       this.socket = makeWASocket({
+        version,
         auth: state,
         printQRInTerminal: false, // We'll handle QR codes via events
         browser: ['WhatsBlast', 'Chrome', '14.4.1'],
         generateHighQualityLinkPreview: true,
         syncFullHistory: false,
         markOnlineOnConnect: false,
+        msgRetryCounterCache,
         getMessage: async (key: WAMessageKey) => {
           // TODO: Implement message retrieval from database if needed
           return undefined;
