@@ -25,6 +25,9 @@ export abstract class BaseWorker<T extends AllJobData> {
         max: this.rateLimitMax,
         duration: this.rateLimitDuration,
       },
+      skipLockRenewal: true,
+      skipStalledCheck: true,
+      lockDuration: 60000, // 60 seconds
     });
 
     this.setupEventHandlers();
