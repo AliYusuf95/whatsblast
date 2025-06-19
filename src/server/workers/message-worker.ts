@@ -265,6 +265,8 @@ export class MessageWorker extends BaseWorker<MessageJobData> {
 
         const batch = recipients.slice(i, i + batchSize);
 
+        connection = await getConnection(connection);
+
         // Process batch in parallel
         const batchPromises = batch.map(async (recipient) => {
           try {
@@ -283,9 +285,7 @@ export class MessageWorker extends BaseWorker<MessageJobData> {
               : `${recipient.phone}@c.us`;
 
             // Send message
-            const messageResult = await (
-              await getConnection(connection)
-            ).sendMessage(recipientJid, messageContent);
+            const messageResult = await connection.sendMessage(recipientJid, messageContent);
             const messageId = messageResult?.key?.id;
 
             sentCount++;
