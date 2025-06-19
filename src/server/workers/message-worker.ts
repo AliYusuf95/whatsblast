@@ -13,6 +13,7 @@ import type {
   JobResult,
 } from '../queue/job-types';
 import {
+  WhatsAppConnection,
   whatsappConnectionManager,
   WhatsAppConnectionManager,
 } from '../services/whatsapp/connection-manager';
@@ -221,25 +222,30 @@ export class MessageWorker extends BaseWorker<MessageJobData> {
 
       await job.updateProgress(15);
 
+      const getConnection = async (connectionParam?: WhatsAppConnection) => {
+        let connection = connectionParam || this.whatsappConnectionManager.getConnection(sessionId);
+        if (!connection || !connection.isConnected()) {
+          connection = await this.whatsappConnectionManager.createConnection(
+            sessionId,
+            session.userId,
+          );
+
+          // Wait for connection to be ready
+          let attempts = 0;
+          while (!connection.isConnected() && attempts < 30) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            attempts++;
+          }
+
+          if (!connection.isConnected()) {
+            throw new Error('Failed to establish WhatsApp connection');
+          }
+        }
+        return connection;
+      };
+
       // Get or create connection
-      let connection = this.whatsappConnectionManager.getConnection(sessionId);
-      if (!connection || !connection.isConnected()) {
-        connection = await this.whatsappConnectionManager.createConnection(
-          sessionId,
-          session.userId,
-        );
-
-        // Wait for connection to be ready
-        let attempts = 0;
-        while (!connection.isConnected() && attempts < 30) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          attempts++;
-        }
-
-        if (!connection.isConnected()) {
-          throw new Error('Failed to establish WhatsApp connection');
-        }
-      }
+      let connection = await getConnection();
 
       await job.updateProgress(30);
 
@@ -277,7 +283,9 @@ export class MessageWorker extends BaseWorker<MessageJobData> {
               : `${recipient.phone}@c.us`;
 
             // Send message
-            const messageResult = await connection.sendMessage(recipientJid, messageContent);
+            const messageResult = await (
+              await getConnection(connection)
+            ).sendMessage(recipientJid, messageContent);
             const messageId = messageResult?.key?.id;
 
             sentCount++;
