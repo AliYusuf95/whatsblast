@@ -48,7 +48,7 @@ const sendBulkSchema = z.object({
     )
     .min(1),
   template: z.array(z.union([z.string(), z.number()])),
-  batchSize: z.number().int().min(1).max(50).default(10),
+  batchSize: z.number().int().min(1).max(500).default(10),
   delay: z.number().int().min(500).max(10000).default(2000), // 0.5-10 seconds
 });
 

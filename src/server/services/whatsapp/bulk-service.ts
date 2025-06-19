@@ -86,59 +86,73 @@ export class WhatsAppBulkService {
       const now = new Date();
       const jobId = createId();
 
-      // Create the bulk job record
-      const bulkJobData: typeof bulkJobs.$inferInsert = {
-        id: jobId,
-        userId: input.userId,
-        sessionId: input.sessionId,
-        name: input.name,
-        status: 'pending' as BulkJobStatus,
-        totalMessages: input.recipients.length,
-        processedMessages: 0,
-        successfulMessages: 0,
-        failedMessages: 0,
-        startedAt: null,
-        completedAt: null,
-        errorMessage: null,
-        createdAt: now,
-        updatedAt: now,
-      };
+      return await db.transaction(async (tx) => {
+        // Create the bulk job record
+        const bulkJobData: typeof bulkJobs.$inferInsert = {
+          id: jobId,
+          userId: input.userId,
+          sessionId: input.sessionId,
+          name: input.name,
+          status: 'pending' as BulkJobStatus,
+          totalMessages: input.recipients.length,
+          processedMessages: 0,
+          successfulMessages: 0,
+          failedMessages: 0,
+          startedAt: null,
+          completedAt: null,
+          errorMessage: null,
+          createdAt: now,
+          updatedAt: now,
+        };
 
-      const [job] = await this.db.insert(bulkJobs).values(bulkJobData).returning();
+        const [job] = await tx.insert(bulkJobs).values(bulkJobData).returning();
 
-      // Create individual message records and collect their IDs
-      const messageDataWithIds = input.recipients.map((msg) => {
-        const messageId = createId();
+        // Create individual message records and collect their IDs
+        const messageDataWithIds = input.recipients.map((msg) => {
+          const messageId = createId();
+          return {
+            insertData: {
+              id: messageId,
+              jobId: jobId,
+              phoneNumber: msg.phone,
+              message: constructMessage(input.template, msg.data),
+              status: 'pending' as const,
+              sentAt: null,
+              errorMessage: null,
+              retryCount: 0,
+              createdAt: now,
+              updatedAt: now,
+            } as typeof bulkMessages.$inferInsert,
+            recipientWithId: {
+              messageId,
+              phone: msg.phone,
+              data: msg.data,
+            },
+          };
+        });
+
+        const messageData = messageDataWithIds.map((item) => item.insertData);
+        const recipientsWithIds = messageDataWithIds.map((item) => item.recipientWithId);
+
+        const batchSize = 1000; // Define batch size for inserting messages
+        for (let i = 0; i < messageData.length; i += batchSize) {
+          const batch = messageData.slice(i, i + batchSize);
+          if (batch.length > 0) {
+            await tx.insert(bulkMessages).values(batch);
+          }
+
+          // Optional: Log progress for large batches
+          if (messageData.length > batchSize) {
+            const processed = Math.min(i + batchSize, messageData.length);
+            console.log(`Inserted batch: ${processed}/${messageData.length} messages`);
+          }
+        }
+
         return {
-          insertData: {
-            id: messageId,
-            jobId: jobId,
-            phoneNumber: msg.phone,
-            message: constructMessage(input.template, msg.data),
-            status: 'pending' as const,
-            sentAt: null,
-            errorMessage: null,
-            retryCount: 0,
-            createdAt: now,
-            updatedAt: now,
-          } as typeof bulkMessages.$inferInsert,
-          recipientWithId: {
-            messageId,
-            phone: msg.phone,
-            data: msg.data,
-          },
+          job,
+          recipients: recipientsWithIds,
         };
       });
-
-      const messageData = messageDataWithIds.map((item) => item.insertData);
-      const recipientsWithIds = messageDataWithIds.map((item) => item.recipientWithId);
-
-      await this.db.insert(bulkMessages).values(messageData);
-
-      return {
-        job,
-        recipients: recipientsWithIds,
-      };
     } catch (error) {
       console.error('Failed to create bulk job:', error);
       throw new Error('Failed to create bulk job');

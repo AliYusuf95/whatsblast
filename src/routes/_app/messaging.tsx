@@ -959,7 +959,7 @@ function MessagingPage() {
                 value={batchSize}
                 onChange={(e) => setBatchSize(Number(e.target.value))}
               />
-              <p className="text-xs text-muted-foreground">Messages per batch (1-50)</p>
+              <p className="text-xs text-muted-foreground">Messages per batch (1-500)</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="delay">Delay (ms)</Label>
