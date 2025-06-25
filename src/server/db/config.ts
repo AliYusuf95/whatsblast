@@ -34,6 +34,7 @@ if (!isValidConfig(configs)) {
 }
 
 const sqlite = new Database(configs.dbCredentials.url);
+sqlite.exec('PRAGMA journal_mode = WAL;');
 const database = drizzle({ client: sqlite, schema });
 
 const runMigrations = async () => {
