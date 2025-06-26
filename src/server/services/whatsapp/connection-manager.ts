@@ -2,6 +2,7 @@ import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
   proto,
+  Browsers,
 } from '@whiskeysockets/baileys';
 import type {
   WASocket,
@@ -169,7 +170,7 @@ export class WhatsAppConnection extends EventEmitter {
         version,
         auth: state,
         printQRInTerminal: false, // We'll handle QR codes via events
-        browser: ['WhatsBlast', 'Chrome', '14.4.1'],
+        browser: Browsers.windows('Desktop'),
         generateHighQualityLinkPreview: true,
         syncFullHistory: false,
         markOnlineOnConnect: false,
